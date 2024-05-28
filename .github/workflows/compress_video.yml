@@ -1,0 +1,50 @@
+name: Compress Video on Upload
+
+on:
+  repository_dispatch:
+    types: [onedrive-upload]
+
+jobs:
+  compress_video:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install ffmpeg
+      run: sudo apt-get install -y ffmpeg
+
+    - name: Download video file from OneDrive
+      env:
+        ONEDRIVE_ACCESS_TOKEN: ${{ secrets.ONEDRIVE_ACCESS_TOKEN }}
+      run: |
+        set -e
+        mkdir -p "downloaded_videos/$(dirname "${{ github.event.client_payload.path }}")"
+        curl -H "Authorization: Bearer $ONEDRIVE_ACCESS_TOKEN" \
+          -o "downloaded_videos/${{ github.event.client_payload.path }}" \
+          "https://graph.microsoft.com/v1.0/me/drive/root:/Family_Gallery${{ github.event.client_payload.path }}:/content"
+      shell: bash
+
+    - name: Run compression script
+      run: |
+        set -e
+        chmod +x compress_videos.sh
+        ./compress_videos.sh "downloaded_videos/${{ github.event.client_payload.path }}"
+      shell: bash
+
+    - name: Upload compressed video to OneDrive
+      env:
+        ONEDRIVE_ACCESS_TOKEN: ${{ secrets.ONEDRIVE_ACCESS_TOKEN }}
+      run: |
+        set -e
+        curl -X PUT -H "Authorization: Bearer $ONEDRIVE_ACCESS_TOKEN" \
+          -H "Content-Type: video/${{ github.event.client_payload.extension }}" \
+          --data-binary @"compressed_output.${{ github.event.client_payload.extension }}" \
+          "https://graph.microsoft.com/v1.0/me/drive/root:/${{ github.event.client_payload.file }}:/content"
+      shell: bash
